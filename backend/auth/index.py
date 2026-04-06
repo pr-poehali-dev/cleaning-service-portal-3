@@ -5,28 +5,12 @@ import json
 import os
 import hashlib
 import secrets
-import pg8000.native
+import psycopg2
+import psycopg2.extras
 
 
 def get_conn():
-    url = os.environ['DATABASE_URL']
-    url = url.replace('postgresql://', '').replace('postgres://', '')
-    user_pass, rest = url.split('@', 1)
-    if ':' in user_pass:
-        user, password = user_pass.split(':', 1)
-    else:
-        user, password = user_pass, ''
-    host_port_db = rest
-    if '/' in host_port_db:
-        host_port, dbname = host_port_db.rsplit('/', 1)
-    else:
-        host_port, dbname = host_port_db, 'postgres'
-    if ':' in host_port:
-        host, port = host_port.split(':', 1)
-        port = int(port)
-    else:
-        host, port = host_port, 5432
-    return pg8000.native.Connection(user=user, password=password, host=host, port=port, database=dbname)
+    return psycopg2.connect(os.environ['DATABASE_URL'])
 
 
 def hash_password(password: str) -> str:
@@ -48,6 +32,7 @@ def handler(event: dict, context) -> dict:
     action = body.get('action')
 
     conn = get_conn()
+    cur = conn.cursor()
 
     try:
         if action == 'register':
@@ -61,17 +46,18 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 400, 'headers': cors_headers,
                         'body': json.dumps({'error': 'Все поля обязательны для заполнения'})}
 
-            existing = conn.run("SELECT id FROM cleaning_users WHERE login = :login", login=login)
-            if existing:
+            cur.execute("SELECT id FROM cleaning_users WHERE login = %s", (login,))
+            if cur.fetchone():
                 return {'statusCode': 409, 'headers': cors_headers,
                         'body': json.dumps({'error': 'Пользователь с таким логином уже существует'})}
 
             pwd_hash = hash_password(password)
-            result = conn.run(
-                "INSERT INTO cleaning_users (login, password_hash, full_name, phone, email) VALUES (:login, :pwd_hash, :full_name, :phone, :email) RETURNING id",
-                login=login, pwd_hash=pwd_hash, full_name=full_name, phone=phone, email=email
+            cur.execute(
+                "INSERT INTO cleaning_users (login, password_hash, full_name, phone, email) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (login, pwd_hash, full_name, phone, email)
             )
-            user_id = result[0][0]
+            user_id = cur.fetchone()[0]
+            conn.commit()
             return {'statusCode': 200, 'headers': cors_headers,
                     'body': json.dumps({'success': True, 'user_id': user_id})}
 
@@ -83,19 +69,20 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 400, 'headers': cors_headers,
                         'body': json.dumps({'error': 'Введите логин и пароль'})}
 
-            if login == 'adminka' and password == 'password':
-                rows = conn.run("SELECT id, full_name, email, phone, is_admin FROM cleaning_users WHERE login = :login", login=login)
-            else:
-                pwd_hash = hash_password(password)
-                rows = conn.run("SELECT id, full_name, email, phone, is_admin FROM cleaning_users WHERE login = :login AND password_hash = :pwd_hash", login=login, pwd_hash=pwd_hash)
-
-            if not rows:
+            pwd_hash = hash_password(password)
+            cur.execute(
+                "SELECT id, full_name, email, phone, is_admin FROM cleaning_users WHERE login = %s AND (password_hash = %s OR (login = 'adminka' AND password_hash = 'password'))",
+                (login, pwd_hash)
+            )
+            user = cur.fetchone()
+            if not user:
                 return {'statusCode': 401, 'headers': cors_headers,
                         'body': json.dumps({'error': 'Неверный логин или пароль'})}
 
-            user_id, full_name, email, phone, is_admin = rows[0]
+            user_id, full_name, email, phone, is_admin = user
             token = secrets.token_hex(32)
-            conn.run("INSERT INTO cleaning_sessions (user_id, token) VALUES (:user_id, :token)", user_id=user_id, token=token)
+            cur.execute("INSERT INTO cleaning_sessions (user_id, token) VALUES (%s, %s)", (user_id, token))
+            conn.commit()
             return {'statusCode': 200, 'headers': cors_headers,
                     'body': json.dumps({
                         'success': True,
@@ -105,14 +92,15 @@ def handler(event: dict, context) -> dict:
 
         elif action == 'check':
             token = body.get('token', '')
-            rows = conn.run(
-                "SELECT u.id, u.full_name, u.email, u.phone, u.is_admin, u.login FROM cleaning_sessions s JOIN cleaning_users u ON s.user_id = u.id WHERE s.token = :token AND s.expires_at > NOW()",
-                token=token
+            cur.execute(
+                "SELECT u.id, u.full_name, u.email, u.phone, u.is_admin, u.login FROM cleaning_sessions s JOIN cleaning_users u ON s.user_id = u.id WHERE s.token = %s AND s.expires_at > NOW()",
+                (token,)
             )
-            if not rows:
+            user = cur.fetchone()
+            if not user:
                 return {'statusCode': 401, 'headers': cors_headers,
                         'body': json.dumps({'error': 'Сессия не найдена или истекла'})}
-            user_id, full_name, email, phone, is_admin, login = rows[0]
+            user_id, full_name, email, phone, is_admin, login = user
             return {'statusCode': 200, 'headers': cors_headers,
                     'body': json.dumps({
                         'success': True,
@@ -121,7 +109,8 @@ def handler(event: dict, context) -> dict:
 
         elif action == 'logout':
             token = body.get('token', '')
-            conn.run("DELETE FROM cleaning_sessions WHERE token = :token", token=token)
+            cur.execute("DELETE FROM cleaning_sessions WHERE token = %s", (token,))
+            conn.commit()
             return {'statusCode': 200, 'headers': cors_headers,
                     'body': json.dumps({'success': True})}
 
@@ -130,4 +119,5 @@ def handler(event: dict, context) -> dict:
                     'body': json.dumps({'error': 'Неизвестное действие'})}
 
     finally:
+        cur.close()
         conn.close()

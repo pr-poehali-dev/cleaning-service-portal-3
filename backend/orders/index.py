@@ -4,7 +4,7 @@
 import json
 import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg2.extras
 
 
 def get_conn():
@@ -35,7 +35,7 @@ def handler(event: dict, context) -> dict:
     token = body.get('token', '')
 
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         user = get_user_from_token(cur, token)
@@ -59,8 +59,7 @@ def handler(event: dict, context) -> dict:
                         'body': json.dumps({'error': 'Все поля обязательны для заполнения'})}
 
             cur.execute(
-                """INSERT INTO cleaning_orders (user_id, address, contact_phone, contact_email, service_date, service_time, service_type, payment_type)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                "INSERT INTO cleaning_orders (user_id, address, contact_phone, contact_email, service_date, service_time, service_type, payment_type) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                 (user_id, address, contact_phone, contact_email, service_date, service_time, service_type, payment_type)
             )
             order_id = cur.fetchone()['id']
@@ -71,15 +70,11 @@ def handler(event: dict, context) -> dict:
         elif action == 'list':
             if is_admin:
                 cur.execute(
-                    """SELECT o.*, u.full_name, u.login, u.phone as user_phone, u.email as user_email
-                       FROM cleaning_orders o JOIN cleaning_users u ON o.user_id = u.id
-                       ORDER BY o.created_at DESC"""
+                    "SELECT o.*, u.full_name, u.login, u.phone as user_phone, u.email as user_email FROM cleaning_orders o JOIN cleaning_users u ON o.user_id = u.id ORDER BY o.created_at DESC"
                 )
             else:
                 cur.execute(
-                    """SELECT o.*, u.full_name, u.login FROM cleaning_orders o 
-                       JOIN cleaning_users u ON o.user_id = u.id
-                       WHERE o.user_id = %s ORDER BY o.created_at DESC""",
+                    "SELECT o.*, u.full_name, u.login FROM cleaning_orders o JOIN cleaning_users u ON o.user_id = u.id WHERE o.user_id = %s ORDER BY o.created_at DESC",
                     (user_id,)
                 )
             orders = cur.fetchall()
