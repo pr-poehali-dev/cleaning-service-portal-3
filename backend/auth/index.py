@@ -71,13 +71,19 @@ def handler(event: dict, context) -> dict:
 
             pwd_hash = hash_password(password)
             cur.execute(
-                "SELECT id, full_name, email, phone, is_admin FROM cleaning_users WHERE login = %s AND (password_hash = %s OR (login = 'adminka' AND password_hash = 'password'))",
-                (login, pwd_hash)
+                "SELECT id, full_name, email, phone, is_admin, password_hash FROM cleaning_users WHERE login = %s",
+                (login,)
             )
-            user = cur.fetchone()
-            if not user:
+            row = cur.fetchone()
+            if not row:
                 return {'statusCode': 401, 'headers': cors_headers,
                         'body': json.dumps({'error': 'Неверный логин или пароль'})}
+            db_hash = row[5]
+            is_adminka = (login == 'adminka' and (db_hash == 'password' or db_hash == pwd_hash))
+            if db_hash != pwd_hash and not is_adminka:
+                return {'statusCode': 401, 'headers': cors_headers,
+                        'body': json.dumps({'error': 'Неверный логин или пароль'})}
+            user = row[:5]
 
             user_id, full_name, email, phone, is_admin = user
             token = secrets.token_hex(32)
