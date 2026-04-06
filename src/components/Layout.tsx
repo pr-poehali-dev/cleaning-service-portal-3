@@ -25,20 +25,12 @@ const Layout = ({ children, state, navigate, logout, title }: LayoutProps) => {
           {state.user && (
             <div className="flex items-center gap-4">
               {!state.user.is_admin && (
-                <>
-                  <button
-                    onClick={() => navigate("orders")}
-                    className={`text-sm px-3 py-1.5 rounded transition-all ${state.page === "orders" ? "bg-white/20 text-white" : "text-white/70 hover:text-white"}`}
-                  >
-                    Мои заявки
-                  </button>
-                  <button
-                    onClick={() => navigate("new-order")}
-                    className={`text-sm px-3 py-1.5 rounded transition-all ${state.page === "new-order" ? "bg-white/20 text-white" : "text-white/70 hover:text-white"}`}
-                  >
-                    Новая заявка
-                  </button>
-                </>
+                <button
+                  onClick={() => navigate("orders")}
+                  className={`text-sm px-3 py-1.5 rounded transition-all ${state.page === "orders" ? "bg-white/20 text-white" : "text-white/70 hover:text-white"}`}
+                >
+                  Мои заявки
+                </button>
               )}
               {state.user.is_admin && (
                 <button
