@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Список заявок без авторизации",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "list", "token": "invalid"},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Проверка несуществующей сессии",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "check", "token": "nonexistent"},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}
